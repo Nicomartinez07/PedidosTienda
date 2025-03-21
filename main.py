@@ -21,6 +21,8 @@ class Order(Base):
     id = Column(Integer, primary_key=True, index=True)
     product = Column(String, index=True)
     quantity = Column(Integer)
+    status = Column(String, default="pendiente")  # Estado de la orden
+    timestamp = Column(DateTime, default=datetime.utcnow)  # Fecha y hora de creación
 
 # Inicializar la base de datos
 Base.metadata.create_all(bind=engine)
@@ -40,16 +42,27 @@ def get_db():
 class OrderCreate(BaseModel):
     product: str
     quantity: int
+    status: str = "pendiente"  # Permite definir el estado al crear una orden
 
 class OrderOut(BaseModel):
     id: int
     product: str
     quantity: int
+    status: str
+    timestamp: datetime  # Agregar el campo de fecha y hora
 
     class Config:
         orm_mode = True
 
+class OrderStatusUpdate(BaseModel):
+    status: str  # Modelo para actualizar el estado
+
 # Rutas de la API
+
+@app.get("/", status_code=status.HTTP_200_OK)
+def welcome():
+    text = """Bienvenido...           '/orders/' para ver todas las ordenes           '/orders/{num}' para ver orden en especifico"""
+    return text
 
 #vizualizar todas las ordenes
 @app.get("/orders/", response_model=List[OrderOut], status_code=status.HTTP_200_OK)
@@ -61,33 +74,51 @@ def get_orders(db: Session = Depends(get_db)):
 @app.get("/orders/{order_id}", response_model=OrderOut, status_code=status.HTTP_200_OK)
 def get_order(order_id: int, db: Session = Depends(get_db)):
     order = db.query(Order).filter(Order.id == order_id).first()
-    if order is None:
+    if order is None: #VERIFICACION SI ORDEN EXISTE
         raise HTTPException(status_code=404, detail="Order not found")
     return order
-
-# Funciones para insertar y consultar en la base de datos (en caso de necesitarse)
-def insert_order(db: Session, product: str, quantity: int) -> Order:
-    db_order = Order(product=product, quantity=quantity)
-    db.add(db_order)
-    db.commit()
-    db.refresh(db_order)
-    return db_order
-
-def select_order(db: Session, order_id: int) -> Order:
-    return db.query(Order).filter(Order.id == order_id).first()
 
 #HACER UN PEDIDO
 @app.post("/orders/", response_model=List[OrderOut], status_code=status.HTTP_201_CREATED)
 def create_orders(orders: List[OrderCreate], db: Session = Depends(get_db)):
     db_orders = []
     for order in orders:
-        db_order = Order(product=order.product, quantity=order.quantity)
+        db_order = Order(product=order.product, quantity=order.quantity, status=order.status)
         db.add(db_order)
         db_orders.append(db_order)
     db.commit()  # Confirmar todos los cambios de una vez
     for db_order in db_orders:
         db.refresh(db_order)  # Actualizar cada objeto con su ID generado
     return db_orders
+
+# Ver el estado de una orden
+@app.get("/orders/{order_id}/status/", response_model=OrderOut, status_code=status.HTTP_200_OK)
+def update_order_status(order_id: int, status_update: OrderStatusUpdate, db: Session = Depends(get_db)):
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if order is None: #VERIFICACION SI ORDEN EXISTE
+        raise HTTPException(status_code=404, detail="Order not found")
+    valid_statuses = ["pendiente", "en proceso", "completado"]
+    if status_update.status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Invalid status. Valid statuses: {valid_statuses}")
+    order.status = status_update.status
+    db.commit()
+    db.refresh(order)
+    return order
+
+# Actualizar el estado de una orden
+@app.put("/orders/{order_id}/status/", response_model=OrderOut, status_code=status.HTTP_202_ACCEPTED)
+def update_order_status(order_id: int, status_update: OrderStatusUpdate, db: Session = Depends(get_db)):
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if order is None: #VERIFICACION SI ORDEN EXISTE
+        raise HTTPException(status_code=404, detail="Order not found")
+    valid_statuses = ["pendiente", "en proceso", "completado"]
+    if status_update.status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Invalid status. Valid statuses: {valid_statuses}")
+    order.status = status_update.status
+    db.commit()
+    db.refresh(order)
+    return order
+
 
 
 

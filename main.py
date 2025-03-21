@@ -51,11 +51,13 @@ class OrderOut(BaseModel):
 
 # Rutas de la API
 
+#vizualizar todas las ordenes
 @app.get("/orders/", response_model=List[OrderOut], status_code=status.HTTP_200_OK)
 def get_orders(db: Session = Depends(get_db)):
     orders = db.query(Order).all()
     return orders
 
+#vizualizar una orden en especifico
 @app.get("/orders/{order_id}", response_model=OrderOut, status_code=status.HTTP_200_OK)
 def get_order(order_id: int, db: Session = Depends(get_db)):
     order = db.query(Order).filter(Order.id == order_id).first()
@@ -74,12 +76,18 @@ def insert_order(db: Session, product: str, quantity: int) -> Order:
 def select_order(db: Session, order_id: int) -> Order:
     return db.query(Order).filter(Order.id == order_id).first()
 
-@app.on_event("startup")
-def startup():
-    # Esta parte es solo para crear datos de ejemplo al iniciar la aplicación
-    db = SessionLocal()
-    insert_order(db, "Coca-cola", 3)
-    insert_order(db, "Pepsi", 5)
-    insert_order(db, "traviatas", 5)
-    db.close()
+#HACER UN PEDIDO
+@app.post("/orders/", response_model=List[OrderOut], status_code=status.HTTP_201_CREATED)
+def create_orders(orders: List[OrderCreate], db: Session = Depends(get_db)):
+    db_orders = []
+    for order in orders:
+        db_order = Order(product=order.product, quantity=order.quantity)
+        db.add(db_order)
+        db_orders.append(db_order)
+    db.commit()  # Confirmar todos los cambios de una vez
+    for db_order in db_orders:
+        db.refresh(db_order)  # Actualizar cada objeto con su ID generado
+    return db_orders
+
+
 
